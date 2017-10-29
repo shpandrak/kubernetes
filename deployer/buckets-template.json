@@ -1,0 +1,40 @@
+{
+  "name":"buckets",
+  "version":"1.0",
+  "description":"Open Source CMS",
+  "entryPointServiceName":"buckets",
+  "appServiceTemplates":[
+    {
+      "appServiceName":"buckets",
+      "psbType":"k8s",
+      "imageName":"srpoder/buckets",
+      "imageType":"nodejs",
+      "imageVersion":"latest",
+      "psbSettings":{
+
+      },
+      "environmentVariables":{
+        "LCB_DATABASE_URI":"mongodb://${db.server}/buckets"
+      },
+      "dependencies":[
+        {
+          "type":"DATABASE",
+          "name":"db",
+          "description":"CMS database",
+          "protocols":[
+            {
+              "protocolName":"mongodb",
+              "version":null,
+              "conditions":null
+            }
+          ]
+        }
+      ],
+      "exposedPorts":[
+        8080
+      ],
+      "httpPort":8080,
+      "entryPointUrl":""
+    }
+  ]
+}

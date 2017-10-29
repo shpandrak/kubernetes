@@ -1,0 +1,56 @@
+{
+  "name":"hackathon",
+  "version":"1.0",
+  "description":"Hackathon Registration App",
+  "entryPointServiceName":"hackathon-svc",
+  "appServiceTemplates":[
+    {
+      "appServiceName":"hackathon-svc",
+      "psbType":"k8s",
+      "imageName":"ocopea/hackathon",
+      "imageType":"java",
+      "imageVersion":"latest",
+      "psbSettings":{
+
+      },
+      "environmentVariables":{
+        "BLOB_URL":"${hack-docs.url}",
+        "BLOB_SERVICE_ID":"${hack-docs.serviceId}",
+        "DB_URL":"${hackathon-db.url}",
+        "DB_USER":"${hackathon-db.user}",
+        "DB_PASSWORD":"${hackathon-db.password}"
+      },
+      "dependencies":[
+        {
+          "type":"OBJECTSTORE",
+          "name":"hack-docs",
+          "description":"Hackathon document store",
+          "protocols":[
+            {
+              "protocolName":"s3",
+              "version":null,
+              "conditions":null
+            }
+          ]
+        },
+        {
+          "type":"DATABASE",
+          "name":"hackathon-db",
+          "description":"Hackathon ideas DB",
+          "protocols":[
+            {
+              "protocolName":"postgres",
+              "version":null,
+              "conditions":null
+            }
+          ]
+        }
+      ],
+      "exposedPorts":[
+        8080
+      ],
+      "httpPort":8080,
+      "entryPointUrl":"hackathon-api/html/nui/index.html"
+    }
+  ]
+}

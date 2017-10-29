@@ -142,7 +142,14 @@ func deployOrcsService(
 		true,
 		80,
 		8080,
-		[]v1.ServicePort{})
+		[]v1.ServicePort{{
+			Port:       9123,
+			TargetPort: types.NewIntOrStringFromInt(9123),
+			Protocol:   v1.ProtocolTCP,
+			Name:       "h2-remote",
+
+
+		}})
 
 	if err != nil {
 		return nil, err
@@ -188,6 +195,7 @@ func deployOrcsService(
 			v1.EnvVar{Name: "OCOPEA_NAMESPACE", Value: ctx.Client.Namespace})
 
 	rootConfNode := createOrcsServicesConfiguration(
+		svc,
 		pgService,
 		*deploySiteArgs.siteName,
 		*deploySiteArgs.verboseSiteLogging)
@@ -294,6 +302,14 @@ func deployOrcsService(
 		return nil, err
 	}
 	err = waitForServiceToBeStarted(ctx, "shpan-copy-store-api")
+	if err != nil {
+		return nil, err
+	}
+	err = waitForServiceToBeStarted(ctx, "remote-shpanblob-dsb-api")
+	if err != nil {
+		return nil, err
+	}
+	err = waitForServiceToBeStarted(ctx, "remote-h2-dsb-api")
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +451,7 @@ func deploySiteCommandExecutor(ctx *cmd.DeployerContext) error {
 		return err
 	}
 
+	/*
 	// Creating the lets-chat app template
 	err = createAppTemplateOrcs(
 		ctx,
@@ -444,6 +461,50 @@ func deploySiteCommandExecutor(ctx *cmd.DeployerContext) error {
 	if err != nil {
 		return fmt.Errorf("Failed creating application template - %s", err.Error())
 	}
+	*/
+
+	// Creating the hackathon app template
+	err = createAppTemplateOrcs(
+		ctx,
+		"hackathon-template.json",
+		"hackathon.png",
+	)
+	if err != nil {
+		return fmt.Errorf("Failed creating application template - %s", err.Error())
+	}
+
+
+	/*
+	// Creating the wordpress app template
+	err = createAppTemplateOrcs(
+		ctx,
+		"wordpress-template.json",
+		"wordpress.png",
+	)
+	if err != nil {
+		return fmt.Errorf("Failed creating application template - %s", err.Error())
+	}
+
+	// Creating the buckets app template
+	err = createAppTemplateOrcs(
+		ctx,
+		"buckets-template.json",
+		"buckets.png",
+	)
+	if err != nil {
+		return fmt.Errorf("Failed creating application template - %s", err.Error())
+	}
+
+	// Creating the minecraft app template
+	err = createAppTemplateOrcs(
+		ctx,
+		"minecraft-template.json",
+		"minecraft.png",
+	)
+	if err != nil {
+		return fmt.Errorf("Failed creating application template - %s", err.Error())
+	}
+	*/
 
 	// Registering the default crb
 	err = registerCrbOrcs(
@@ -468,11 +529,52 @@ func deploySiteCommandExecutor(ctx *cmd.DeployerContext) error {
 		return err
 	}
 
+	volumeDsbSvc, err := deployK8sVolumeDsbOrcs(ctx)
+	if (err != nil) {
+		return err
+	}
+	k8sDsbSvc, err := deployK8sDsbOrcs(ctx)
+	if (err != nil) {
+		return err
+	}
+
+
 	// Adding the dsb to the site
 	err = registerDsbOrcs(ctx, "mongo-k8s-dsb", "http://"+mongoDsbSvc.Spec.ClusterIP+"/dsb")
 	if err != nil {
 		return err
 	}
+
+	// Adding the dsb to the site
+	err = registerDsbOrcs(ctx, "k8s-volume-dsb", "http://"+volumeDsbSvc.Spec.ClusterIP+"/dsb")
+	if err != nil {
+		return err
+	}
+	// Adding the dsb to the site
+	err = registerDsbOrcs(ctx, "k8s-dsb", "http://"+k8sDsbSvc.Spec.ClusterIP+"/dsb")
+	if err != nil {
+		return err
+	}
+	// Adding the dsb to the site
+	err = registerDsbOrcs(ctx, "remote-shpanblob-dsb",
+		fmt.Sprintf(
+			"http://%s:%d/remote-shpanblob-dsb-api",
+			orcsService.Spec.ClusterIP,
+			orcsService.Spec.Ports[0].Port))
+
+	if err != nil {
+		return err
+	}
+	// Adding the dsb to the site
+	err = registerDsbOrcs(ctx, "remote-h2-dsb",
+		fmt.Sprintf(
+			"http://%s:%d/remote-h2-dsb-api",
+			orcsService.Spec.ClusterIP,
+			orcsService.Spec.Ports[0].Port))
+	if err != nil {
+		return err
+	}
+
 
 	err = registerPsbOrcs(ctx, "k8spsb", "http://"+k8sPsbSvc.Spec.ClusterIP+"/k8spsb-api")
 	if err != nil {
@@ -481,17 +583,6 @@ func deploySiteCommandExecutor(ctx *cmd.DeployerContext) error {
 
 	// Adding the docker hub as docker artifact registry
 	err = addDockerArtifactRegistryOrcs(ctx)
-
-	/*
-		err = deployK8sDsbOrcs(ctx)
-		if (err != nil) {
-			return err
-		}
-		err = deployK8sVolumeDsbOrcs(ctx)
-		if (err != nil) {
-			return err
-		}
-	*/
 
 	fmt.Printf("Ocopea4k8s has been deployed!, wanna ride? at:\n%s/hub-web-api/html/nui/index.html\n", rootUrl)
 
@@ -510,6 +601,7 @@ func buildServiceRootUrl(svc *v1.Service, ctx *cmd.DeployerContext) (string, err
 }
 
 func createOrcsServicesConfiguration(
+	orcsService *v1.Service,
 	pgService *v1.Service,
 	siteName string,
 	verboseLogging bool,
@@ -572,7 +664,7 @@ func createOrcsServicesConfiguration(
 
 	// Register hub stuff
 	buildHubServiceConfiguration(&rootConfNode, pgService, verboseLogging)
-	buildSiteServiceConfiguration(&rootConfNode, pgService, siteName, verboseLogging)
+	buildSiteServiceConfiguration(&rootConfNode, orcsService, pgService, siteName, verboseLogging)
 
 	return rootConfNode
 
@@ -675,6 +767,7 @@ func addQueue(rootConfig *configuration.StaticConfigurationNode, queueName strin
 }
 func buildSiteServiceConfiguration(
 	rootConfig *configuration.StaticConfigurationNode,
+	orcsService *v1.Service,
 	pgService *v1.Service,
 	siteName string,
 	verboseLogging bool) {
@@ -736,7 +829,15 @@ func buildSiteServiceConfiguration(
 	}
 
 	var protectionServiceParameters map[string]string = nil
+
 	var shpanCopyStoreServiceParameters map[string]string = nil
+	var remoteShpanBlobDsbServiceParameters map[string]string = map[string]string{
+		"publicURL": "http://" + orcsService.Spec.ClusterIP +"/remote-shpanblob-dsb-api",
+	}
+	var remoteH2DsbServiceParameters map[string]string = map[string]string{
+		"externalBindHost": orcsService.Spec.ClusterIP,
+	}
+
 	if verboseLogging {
 		protectionServiceParameters = map[string]string{
 			"print-all-json-requests": "true",
@@ -745,7 +846,10 @@ func buildSiteServiceConfiguration(
 			"print-all-json-requests": "true",
 		}
 		siteServiceParameters["print-all-json-requests"] = "true"
+		remoteShpanBlobDsbServiceParameters["print-all-json-requests"] = "true"
+		remoteH2DsbServiceParameters["print-all-json-requests"] = "true"
 	}
+
 
 	serviceConfigConfNode.Children["site"] = configuration.StaticConfigurationNode{
 		Data: configuration.ServiceConfig{
@@ -826,6 +930,23 @@ func buildSiteServiceConfiguration(
 			Parameters:          shpanCopyStoreServiceParameters,
 		},
 	}
+
+	serviceConfigConfNode.Children["remote-h2-dsb"] = configuration.StaticConfigurationNode{
+		Data: configuration.ServiceConfig{
+			ServiceURI: "remote-h2-dsb",
+			Route:      "http://localhost:8080/remote-h2-dsb-api",
+			GlobalLoggingConfig: "DEBUG",
+			Parameters:          remoteH2DsbServiceParameters,
+		},
+	}
+	serviceConfigConfNode.Children["remote-shpanblob-dsb"] = configuration.StaticConfigurationNode{
+		Data: configuration.ServiceConfig{
+			ServiceURI: "remote-shpanblob-dsb",
+			Route:      "http://localhost:8080/remote-shpanblob-dsb-api",
+			GlobalLoggingConfig: "DEBUG",
+			Parameters:          remoteShpanBlobDsbServiceParameters,
+		},
+	}
 }
 
 func deployK8sPsbOrcs(ctx *cmd.DeployerContext, exposePublic bool) (*v1.Service, error) {
@@ -891,8 +1012,40 @@ func deployMongoDsbOrcs(ctx *cmd.DeployerContext, exposePublic bool) (*v1.Servic
 
 	return svc, nil
 }
+func deployMysqlDsbOrcs(ctx *cmd.DeployerContext, exposePublic bool) (*v1.Service, error) {
 
-func deployK8sDsbOrcs(ctx *cmd.DeployerContext) error {
+	fmt.Println("Deploying mongo-dsb")
+	// Verifying site is registered on hub
+	svc, err := deployService(
+		ctx.Client,
+		"mysql-k8s-dsb",
+		ctx.DeploymentType,
+		exposePublic,
+		true,
+		[]v1.EnvVar{
+			{Name: "K8S_USERNAME", Value: ctx.Client.UserName},
+			{Name: "K8S_PASSWORD", Value: ctx.Client.Password},
+			{Name: "OCOPEA_NAMESPACE", Value: ctx.Client.Namespace},
+			{Name: "PORT", Value: "8080"},
+			{Name: "HOST", Value: "0.0.0.0"},
+		},
+		80,
+		8080,
+		[]v1.ServicePort{},
+		"ocopea/mysql-k8s-dsb",
+		"dsb",
+		ctx.ClusterIp,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("mysql-dsb has been deployed successfully")
+
+	return svc, nil
+}
+
+func deployK8sDsbOrcs(ctx *cmd.DeployerContext) (*v1.Service, error) {
 	// Verifying site is registered on hub
 	svc, err := deployService(
 		ctx.Client,
@@ -916,20 +1069,13 @@ func deployK8sDsbOrcs(ctx *cmd.DeployerContext) error {
 	)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Adding the dsb to the site
-	err = registerDsbOrcs(ctx, "k8s-dsb", "http://"+svc.Spec.ClusterIP+"/dsb")
-	if err != nil {
-		return err
-	}
-
-	return err
-
+	return svc, nil
 }
 
-func deployK8sVolumeDsbOrcs(ctx *cmd.DeployerContext) error {
+func deployK8sVolumeDsbOrcs(ctx *cmd.DeployerContext) (*v1.Service, error) {
 	// Verifying site is registered on hub
 	svc, err := deployService(
 		ctx.Client,
@@ -953,16 +1099,10 @@ func deployK8sVolumeDsbOrcs(ctx *cmd.DeployerContext) error {
 	)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Adding the dsb to the site
-	err = registerDsbOrcs(ctx, "k8s-volume-dsb", "http://"+svc.Spec.ClusterIP+"/dsb")
-	if err != nil {
-		return err
-	}
-
-	return err
+	return svc, nil
 
 }
 

@@ -1,0 +1,40 @@
+{
+  "name":"minecraft",
+  "version":"1.0",
+  "description":"Minecraft",
+  "entryPointServiceName":"minecraft",
+  "appServiceTemplates":[
+    {
+      "appServiceName":"minecraft",
+      "psbType":"k8s",
+      "imageName":"itzg/minecraft-server",
+      "imageType":"java",
+      "imageVersion":"latest",
+      "psbSettings":{
+
+      },
+      "environmentVariables":{
+        "EULA":"TRUE"
+      },
+      "dependencies":[
+        {
+          "type":"OTHER",
+          "name":"data-volume",
+          "description":"Minecraft Volume",
+          "protocols":[
+            {
+              "protocolName":"docker-volume",
+              "version":null,
+              "conditions":null
+            }
+          ]
+        }
+      ],
+      "exposedPorts":[
+        25565
+      ],
+      "httpPort":25565,
+      "entryPointUrl":"/"
+    }
+  ]
+}
